@@ -15,8 +15,7 @@ Todo_list/
 │   ├── public/       # Public assets
 │   ├── package.json  # Node.js dependencies
 │   └── README.md     # Frontend documentation
-├── src/              # Alternative frontend structure
-├── main.go           # Root Go file
+├── docs/            # Project documentation
 └── package.json      # Root package.json
 ```
 
