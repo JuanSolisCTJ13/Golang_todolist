@@ -1,109 +1,112 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
-	"sync"
-	"time"
 
 	"github.com/gorilla/mux"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/rs/cors"
 )
 
-type Task struct {
-	ID        int    `json:"id"`
-	Text      string `json:"text"`
-	Completed bool   `json:"completed"`
-	Status    string `json:"status"`
-	StartDate string `json:"startDate"`
-	EndDate   string `json:"endDate"`
-}
-
-var (
-	tasks  = make(map[int]Task)
-	nextID = 1
-	mutex  = &sync.Mutex{}
-)
+var store *TaskStore
 
 func getTasks(w http.ResponseWriter, r *http.Request) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	var taskList []Task
-	for _, task := range tasks {
-		taskList = append(taskList, task)
+	tasks, err := store.GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	json.NewEncoder(w).Encode(taskList)
+	json.NewEncoder(w).Encode(tasks)
 }
 
 func createTask(w http.ResponseWriter, r *http.Request) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	var task Task
 	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	task.ID = nextID
-	nextID++
 	if task.Status == "" {
 		task.Status = "todo"
 	}
-	tasks[task.ID] = task
+	if err := store.Create(&task); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(task)
 }
 
 func updateTask(w http.ResponseWriter, r *http.Request) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	params := mux.Vars(r)
 	id, err := strconv.Atoi(params["id"])
 	if err != nil {
 		http.Error(w, "Invalid task ID", http.StatusBadRequest)
 		return
 	}
-
-	if _, ok := tasks[id]; !ok {
+	if _, err := store.GetByID(id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
-
 	var updatedTask Task
 	if err := json.NewDecoder(r.Body).Decode(&updatedTask); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
+	if err := store.Update(id, updatedTask); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	updatedTask.ID = id
-	tasks[id] = updatedTask
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(updatedTask)
 }
 
 func deleteTask(w http.ResponseWriter, r *http.Request) {
-	mutex.Lock()
-	defer mutex.Unlock()
 	params := mux.Vars(r)
 	id, err := strconv.Atoi(params["id"])
 	if err != nil {
 		http.Error(w, "Invalid task ID", http.StatusBadRequest)
 		return
 	}
-
-	if _, ok := tasks[id]; !ok {
+	if err := store.Delete(id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
-
-	delete(tasks, id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func main() {
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./tasks.db"
+	}
+
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        completed BOOLEAN NOT NULL DEFAULT 0,
+        status TEXT,
+        start_date TEXT,
+        end_date TEXT
+    )`); err != nil {
+		log.Fatal(err)
+	}
+
+	store = NewTaskStore(db)
+
 	r := mux.NewRouter()
 
 	r.HandleFunc("/tasks", getTasks).Methods("GET")
@@ -118,11 +121,6 @@ func main() {
 	})
 
 	handler := c.Handler(r)
-
-	// Pre-populate with some data
-	tasks[1] = Task{ID: 1, Text: "Learn Go", Status: "todo", StartDate: time.Now().Format("2006-01-02"), EndDate: ""}
-	tasks[2] = Task{ID: 2, Text: "Learn React", Status: "done", StartDate: time.Now().Format("2006-01-02"), EndDate: time.Now().Format("2006-01-02")}
-	nextID = 3
 
 	http.ListenAndServe(":8080", handler)
 }
