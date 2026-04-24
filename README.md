@@ -102,3 +102,7 @@ This project is licensed under the MIT License.
 ## Author
 
 Juan Alberto Solis Castro 
+
+## FastAPI Machine Learning API
+
+Se agregó una nueva implementación en `ml_api/` para servir inferencia de riesgo con FastAPI, validación de datos con Pydantic, health checks y pruebas automatizadas.
