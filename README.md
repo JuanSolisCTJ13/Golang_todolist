@@ -24,7 +24,7 @@ Todo_list/
 - **Frontend**: React.js
 - **Backend**: Go (Golang)
 - **API**: RESTful API
-- **Database**: In-memory storage (can be extended to use a database)
+ - **Database**: SQLite
 
 ## Features
 
@@ -61,6 +61,10 @@ npm install
 cd ../backend
 go mod tidy
 ```
+4. Create the SQLite database:
+```bash
+sqlite3 tasks.db < migrations/001_create_tasks.sql
+```
 
 ### Running the Application
 
@@ -70,6 +74,7 @@ cd backend
 go run main.go
 ```
 The backend will run on `http://localhost:8080`
+You can set the `DB_PATH` environment variable to specify a custom SQLite file.
 
 2. Start the frontend development server:
 ```bash
