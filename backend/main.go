@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
@@ -82,6 +83,29 @@ func deleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func health(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func allowedOrigins() []string {
+	origins := os.Getenv("ALLOWED_ORIGINS")
+	if origins == "" {
+		return []string{"http://localhost:3050", "http://localhost:3000"}
+	}
+
+	parts := strings.Split(origins, ",")
+	clean := make([]string, 0, len(parts))
+	for _, origin := range parts {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			clean = append(clean, origin)
+		}
+	}
+	return clean
+}
+
 func main() {
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
@@ -108,19 +132,24 @@ func main() {
 	store = NewTaskStore(db)
 
 	r := mux.NewRouter()
-
+	r.HandleFunc("/healthz", health).Methods("GET")
 	r.HandleFunc("/tasks", getTasks).Methods("GET")
 	r.HandleFunc("/tasks", createTask).Methods("POST")
 	r.HandleFunc("/tasks/{id}", updateTask).Methods("PUT")
 	r.HandleFunc("/tasks/{id}", deleteTask).Methods("DELETE")
 
 	c := cors.New(cors.Options{
-		AllowedOrigins: []string{"http://localhost:3050", "http://localhost:3000"},
+		AllowedOrigins: allowedOrigins(),
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	})
 
-	handler := c.Handler(r)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-	http.ListenAndServe(":8080", handler)
+	addr := ":" + port
+	log.Printf("Todo API listening on %s", addr)
+	log.Fatal(http.ListenAndServe(addr, c.Handler(r)))
 }
